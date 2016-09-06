@@ -1,3 +1,15 @@
+// ASCII only
+function bytesToString(buffer) {
+    return String.fromCharCode.apply(null, new Uint8Array(buffer));
+}
+
+// this is Nordic's UART service
+var bluefruit = {
+    serviceUUID: '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+    txCharacteristic: '6e400002-b5a3-f393-e0a9-e50e24dcca9e', // transmit is from the phone's perspective
+    rxCharacteristic: '6e400003-b5a3-f393-e0a9-e50e24dcca9e'  // receive is from the phone's perspective
+};
+
 var BNO = (function() {
 
   var Constructor = function(name) {
@@ -10,6 +22,7 @@ var BNO = (function() {
     d3.select('#disconnect').on('touchend', this.disconnect.bind(this));
     d3.select('#connect').on('touchend', this.reset.bind(this));
     d3.select('#offset').on('touchend', this.saveOffset.bind(this));
+    
     d3.select('#connect').style('display', 'none');
 
   };
@@ -43,6 +56,7 @@ var BNO = (function() {
   }
 
   proto.status = function(text) {
+    console.log("status", text);
     d3.select('#status').html(text);
   };
 
@@ -71,94 +85,104 @@ var BNO = (function() {
     if(no_reconnect)
       return;
 
-    this.status('');
+    this.status('In reset');
     d3.select('#connect').style('display', 'none');
     d3.select('#disconnect').style('display', 'initial');
 
     window.plugins.insomnia.keepAwake();
     navigator.splashscreen.show();
 
-    bluetoothSerial.isEnabled(this.findDevices.bind(this), function() {
-      navigator.splashscreen.hide();
-      this.status('Bluetooth is currently turned off. :(');
-    });
+    ble.isEnabled(
+      this.findDevices.bind(this),
+      function() {
+        navigator.splashscreen.hide();
+        this.status('Bluetooth is currently turned off. ');
+      });
 
   };
 
   proto.findDevices = function() {
-
-    // search now
-    bluetoothSerial.list(
-      this.connect.bind(this),
-      this.status
-    );
-
+    if (cordova.platformId === 'android') { // Android filtering is broken
+        ble.scan([], 5, this.connect.bind(this), this.onDisconnect);
+    } else {
+        ble.scan([bluefruit.serviceUUID],
+                 5,
+                 this.connect.bind(this),
+                 this.onDisconnect);
+    }
+    
     // keep searching
     this.search = setInterval(function() {
-
-      bluetoothSerial.list(
-        this.connect.bind(this),
-        this.status
-      );
+        if (cordova.platformId === 'android') { // Android filtering is broken
+            ble.scan([],
+                     5,
+                     this.connect.bind(this),
+                     this.onDisconnect);
+        } else {
+            ble.scan([bluefruit.serviceUUID],
+                     5,
+                     this.connect.bind(this),
+                     this.onDisconnect);
+        }
 
     }.bind(this), 10000);
 
   };
-
-  proto.connect = function(results) {
-
-    // make sure we have results
-    if(! Array.isArray(results) || ! results.length)
+  
+  // connect if hardcoded device name scanned
+  proto.connect = function(device) {
+    // return if already starting a connection
+    // or if the name doesn't match
+    if(this.connected || device.name != this.name){
+      console.log('returning nothing from connect',
+                  this.connected,
+                  'device.name',
+                  device.name);
+      
       return;
+    }
 
-    // loop through bluetooth devices
-    results.forEach(function(r) {
+    // mark as connected
+    this.connected = true;
+    
+    this.deviceId = device.id;
+    
+    var onConnect = function(peripheral) {
+        clearInterval(this.search);
 
-      // return if already starting a connection
-      // or if the name doesn't match
-      if(this.connected || r.name != this.name)
-        return;
+        // subscribe for incoming data
+        ble.startNotification(this.deviceId,
+                              bluefruit.serviceUUID,
+                              bluefruit.rxCharacteristic,
+                              this.processData.bind(this),
+                              this.disconnect.bind(this));
 
-      // mark as connected
-      this.connected = true;
-
-      // connect to the matching device
-      bluetoothSerial.connect(
-        r.uuid,
-        this.subscribe.bind(this),
-        this.onDisconnect.bind(this)
-      );
-
-    }.bind(this));
-
+        navigator.splashscreen.hide();
+    };  
+        
+    // connect to the matching device
+    ble.connect(
+      this.deviceId,
+      onConnect.bind(this),
+      this.onDisconnect.bind(this)
+    );
   };
 
   proto.disconnect = function() {
 
     this.status('Disconnecting...');
 
-    bluetoothSerial.disconnect(
+    ble.disconnect(
+      this.deviceId,
       this.onDisconnect.bind(this),
       this.status
     );
 
   };
 
-  proto.subscribe = function() {
+  proto.onDisconnect = function(errorMsg) {
 
-    // stop searching
-    clearInterval(this.search);
-
-    // show the actual app
-    navigator.splashscreen.hide();
-
-    // listen for data
-    bluetoothSerial.subscribe('|', this.processData.bind(this));
-
-  };
-
-  proto.onDisconnect = function() {
-
+    console.log('connection closed. errormsg ', errorMsg);
     this.status('Connection closed.');
     d3.select('#connect').style('display', 'initial');
     d3.select('#disconnect').style('display', 'none');
@@ -176,17 +200,31 @@ var BNO = (function() {
 
   proto.processData = function(data) {
 
-    past_low = this.low_battery;
-    console.log(data);
+    var data;
+    try {
+      data = JSON.parse(bytesToString(data));
+    }
+    catch(e){
+      // sometimes bleufruit sends broken lines in two separate
+      // packets
+      console.log('exception json parsing data', e, data);
+      return;
+    }
 
-    data = data.split(',');
+    console.log('data', data);
+    //this.yaw.update(data[2]);
+    // pitch is data[1]
+    
+    //TODO remove this parseFloat. it's unnecessary
+    this.roll.update(parseFloat(data[0]));
+    
+    var past_low = this.low_battery;
+    this.low_battery = parseInt(data[1]) < 3300 ? true : false;
 
-    this.yaw.update(data[0]);
-    this.roll.update(parseFloat(data[2]) + 180);
-    this.low_battery = parseInt(data[3]) < 3300 ? true : false;
-
-    if(this.low_battery && !past_low)
+    if(this.low_battery && !past_low){
+      console.log('low batter', parseInt(data[1]));
       navigator.notification.alert('The Bluefruit\'s battery is low', null, 'Warning');
+    }
 
     this.update();
 

@@ -1,5 +1,5 @@
 *.swp
 *.swo
 .DS_Store
-platforms/ios/*
+platforms/*
 plugins/**

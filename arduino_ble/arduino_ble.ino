@@ -1,3 +1,6 @@
+
+
+
 #include <Wire.h>
 #include <SPI.h>
 #include <SoftwareSerial.h>
@@ -31,15 +34,7 @@ void setup() {
 
   if (! ble.begin(VERBOSE_MODE)) {
     Serial.println( F("FAILED!") );
-    while(1);
-  }
-
-  Serial.println( F("OK!") );
-
-  Serial.print(F("Factory reset: "));
-  if(! ble.factoryReset()) {
-    Serial.println(F("FAILED."));
-    while(1);
+    while (1);
   }
 
   Serial.println( F("OK!") );
@@ -47,22 +42,24 @@ void setup() {
   ble.echo(false);
 
   Serial.print(F("Set device name: "));
-  if(! ble.sendCommandCheckOK(F("AT+GAPDEVNAME=BNOIOS"))) {
+  if (! ble.sendCommandCheckOK(F("AT+GAPDEVNAME=BNOIOS"))) {
     Serial.println(F("FAILED."));
-    while(1);
+    while (1);
   }
 
-  Serial.println(F("OK!"));
+  //Serial.println(F("OK!"));
 
   ble.reset();
 
-  Serial.print(F("BNO055 init: "));
-  if(! bno.begin()) {
+  //Serial.print(F("BNO055 init: "));
+  if (! bno.begin()) {
     Serial.println(F("FAILED."));
-    while(1);
+    while (1);
   }
-
-  Serial.println(F("OK!"));
+  
+  delay(1000);
+  
+  //Serial.println(F("OK!"));
 
   bno.setExtCrystalUse(true);
 
@@ -71,7 +68,7 @@ void setup() {
 
   Serial.println(F("Connected"));
 
-  batteryLevel();
+  //batteryLevel();
 
 }
 
@@ -80,18 +77,42 @@ void loop() {
   sensors_event_t event;
   bno.getEvent(&event);
 
+  uint8_t system, gyro, accel, mag = 0;
+  bno.getCalibration(&system, &gyro, &accel, &mag);
+
   ble.print("AT+BLEUARTTX=");
+  //char buf[40];
+  //char xaxis[6];
+  //char z[6];
+  //dtostrf(event.orientation.x, sizeof xaxis, 1, xaxis);
+  //dtostrf(event.orientation.z, sizeof z, 1, z);
+  //int nchars = snprintf(buf, sizeof buf, "x %d | z %s | n ", event.orientation.x, z);
+  //ble.print(buf);
+  //ble.println(nchars);
+  
+  ble.flush();
+  
+  ble.print("[");
+  // !seems system output here breaks everyting. Or else I got unlucky w multiple bootloads
+  //ble.print(system, DEC);
+  //ble.print(",");
+  ble.print(gyro, DEC);
+  ble.print(accel, DEC);
+  ble.print(mag, DEC);
+  ble.print(",");
   ble.print(event.orientation.x, 1);
   ble.print(",");
   ble.print(event.orientation.y, 1);
   ble.print(",");
   ble.print(event.orientation.z, 1);
-  ble.print(",");
-  ble.print(battery, DEC);
-  ble.println("|");
-  ble.readline(200);
+  //ble.print(",");
+  //ble.print(battery, DEC);
+  ble.println("]");
 
-  if(count == 5000) {
+  
+  ble.readline();
+
+  if (count == 5000) {
     batteryLevel();
     count = 0;
   } else {
@@ -106,7 +127,7 @@ void batteryLevel() {
   ble.println("AT+HWVBAT");
   ble.readline(1000);
 
-  if(strcmp(ble.buffer, "OK") == 0) {
+  if (strcmp(ble.buffer, "OK") == 0) {
     battery = 0;
   } else {
     battery = atoi(ble.buffer);

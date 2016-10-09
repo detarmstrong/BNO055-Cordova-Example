@@ -47,11 +47,11 @@ void setup() {
     while (1);
   }
 
-  //Serial.println(F("OK!"));
+  Serial.println(F("OK!"));
 
   ble.reset();
 
-  //Serial.print(F("BNO055 init: "));
+  Serial.print(F("BNO055 init: "));
   if (! bno.begin()) {
     Serial.println(F("FAILED."));
     while (1);
@@ -59,7 +59,7 @@ void setup() {
   
   delay(1000);
   
-  //Serial.println(F("OK!"));
+  Serial.println(F("OK 2!"));
 
   bno.setExtCrystalUse(true);
 
@@ -78,8 +78,10 @@ void loop() {
   bno.getEvent(&event);
 
   uint8_t system, gyro, accel, mag = 0;
+  
   bno.getCalibration(&system, &gyro, &accel, &mag);
-
+  Serial.print(gyro, DEC);
+ 
   ble.print("AT+BLEUARTTX=");
   //char buf[40];
   //char xaxis[6];
@@ -90,7 +92,7 @@ void loop() {
   //ble.print(buf);
   //ble.println(nchars);
   
-  ble.flush();
+  //ble.flush();
   
   ble.print("[");
   // !seems system output here breaks everyting. Or else I got unlucky w multiple bootloads
@@ -135,3 +137,4 @@ void batteryLevel() {
   }
 
 }
+

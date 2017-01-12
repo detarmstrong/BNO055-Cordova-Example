@@ -6,6 +6,8 @@ over Bluetooth LE using the following hardware:
 * [Bluefruit LE UART Friend][4]
 * [BNO055 9-DOF][5]
 * [Pro Trinket 3V][6]
+* test
+* test
 
 ## Dependencies
 
